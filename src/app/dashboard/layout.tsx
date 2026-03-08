@@ -14,6 +14,7 @@ const menuItems = [
   { href: '/dashboard/checklists', label: 'Checklists', icon: '✅' },
   { href: '/dashboard/aro', label: 'ARO/SORA', icon: '⚠️' },
   { href: '/dashboard/meteorologia', label: 'Meteorologia', icon: '🌤️' },
+  { href: '/dashboard/assinatura', label: 'Assinatura', icon: '💳' }, // ADICIONE ESTA LINHA
   { href: '/dashboard/configuracoes', label: 'Configurações', icon: '⚙️' },
 ]
 

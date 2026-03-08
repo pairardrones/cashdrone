@@ -21,6 +21,75 @@ interface Question {
   helpful_count: number
 }
 
+// Mapeamento de sinônimos e variações
+const synonymMap: Record<string, string[]> = {
+  'registro': ['cadastrar', 'cadastramento', 'registrar', 'inscrição', 'licença'],
+  'habilitação': ['licença', 'certificado', 'habilitado', 'curso', 'cpr'],
+  'autorização': ['permissão', 'autorizar', 'aprovado', 'voo', 'sarpas'],
+  'voo': ['voo', 'voar', 'voando', 'flight', 'operar'],
+  'drone': ['drone', 'drones', 'vant', 'aeronave', 'equipamento'],
+  'multa': ['penalidade', 'infração', 'sanção', 'advertência'],
+  'segurança': ['seguro', 'segurança', 'risco', 'perigo', 'acidente'],
+  'anac': ['anac', 'agência nacional', 'aviação civil'],
+  'decea': ['decea', 'espaço aéreo', 'controle', 'sarpas'],
+  'anatel': ['anatel', 'frequência', 'rádio', 'transmissor'],
+  'altitude': ['altura', 'altitude', 'metros', 'limite'],
+  'noite': ['noturno', 'noite', 'escuro', 'luzes'],
+  'urbano': ['cidade', 'urbano', 'área urbana', 'populosa'],
+  'peso': ['peso', 'massa', 'kg', 'gramas', 'mtow'],
+  'aro': ['aro', 'sora', 'risco', 'avaliação', 'operacional'],
+  'análise': ['análise', 'analise', 'avaliação', 'estudo'],
+  'indoor': ['indoor', 'indoo', 'interno', 'dentro', 'coberto'],
+  'outdoor': ['outdoor', 'externo', 'fora', 'ao ar livre'],
+}
+
+// Função de similaridade fuzzy (Levenshtein simplificado)
+function fuzzyMatch(str1: string, str2: string): number {
+  const s1 = str1.toLowerCase()
+  const s2 = str2.toLowerCase()
+  
+  if (s1 === s2) return 1
+  if (s1.includes(s2) || s2.includes(s1)) return 0.8
+  
+  // Distância de Levenshtein simplificada
+  const matrix: number[][] = []
+  const len1 = s1.length
+  const len2 = s2.length
+  
+  for (let i = 0; i <= len1; i++) matrix[i] = [i]
+  for (let j = 0; j <= len2; j++) matrix[0][j] = j
+  
+  for (let i = 1; i <= len1; i++) {
+    for (let j = 1; j <= len2; j++) {
+      if (s1[i - 1] === s2[j - 1]) {
+        matrix[i][j] = matrix[i - 1][j - 1]
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        )
+      }
+    }
+  }
+  
+  const maxLen = Math.max(len1, len2)
+  return maxLen === 0 ? 1 : (maxLen - matrix[len1][len2]) / maxLen
+}
+
+// Expandir termos de busca com sinônimos
+function expandSearchTerms(term: string): string[] {
+  const terms = [term.toLowerCase()]
+  
+  for (const [key, synonyms] of Object.entries(synonymMap)) {
+    if (term.toLowerCase().includes(key) || synonyms.some(s => term.toLowerCase().includes(s))) {
+      terms.push(key, ...synonyms)
+    }
+  }
+  
+  return [...new Set(terms)]
+}
+
 export default function FAQPage() {
   const [categories, setCategories] = useState<Category[]>([])
   const [questions, setQuestions] = useState<Question[]>([])
@@ -45,47 +114,81 @@ export default function FAQPage() {
     setLoading(false)
   }
 
-  // Filtrar perguntas por busca e categoria
+  // Filtrar perguntas com busca fuzzy
   const filteredQuestions = useMemo(() => {
     let filtered = questions
 
-    // Filtro por categoria
     if (selectedCategory) {
       filtered = filtered.filter((q) => q.category_id === selectedCategory)
     }
 
-    // Filtro por termo de busca
     if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase()
-      filtered = filtered.filter(
-        (q) =>
-          q.question.toLowerCase().includes(term) ||
-          q.answer.toLowerCase().includes(term) ||
-          q.keywords?.some((k) => k.toLowerCase().includes(term))
-      )
+      const searchTerms = expandSearchTerms(searchTerm)
+      
+      filtered = filtered.filter((q) => {
+        const questionLower = q.question.toLowerCase()
+        const answerLower = q.answer.toLowerCase()
+        const keywordsLower = q.keywords?.map(k => k.toLowerCase()) || []
+        
+        // Verificar correspondência direta
+        const directMatch = searchTerms.some(term => 
+          questionLower.includes(term) ||
+          answerLower.includes(term) ||
+          keywordsLower.some(k => k.includes(term))
+        )
+        
+        if (directMatch) return true
+        
+        // Verificar correspondência fuzzy
+        const words = searchTerm.toLowerCase().split(/\s+/)
+        return words.some(word => {
+          if (word.length < 3) return false
+          
+          // Verificar na pergunta
+          const questionWords = questionLower.split(/\s+/)
+          if (questionWords.some(qw => fuzzyMatch(word, qw) > 0.7)) return true
+          
+          // Verificar nas keywords
+          if (keywordsLower.some(k => fuzzyMatch(word, k) > 0.7)) return true
+          
+          return false
+        })
+      })
     }
 
     return filtered
   }, [questions, selectedCategory, searchTerm])
 
-  // Sugestões de busca
+  // Sugestões inteligentes
   const suggestions = useMemo(() => {
-    if (!searchTerm.trim() || searchTerm.length < 2) return []
+    if (!searchTerm.trim()) {
+      // Mostrar perguntas populares quando não há busca
+      return questions.slice(0, 5)
+    }
+    
+    if (searchTerm.length < 2) return []
 
-    const term = searchTerm.toLowerCase()
-    const matches = questions.filter(
-      (q) =>
-        q.question.toLowerCase().includes(term) ||
-        q.keywords?.some((k) => k.toLowerCase().includes(term))
-    )
+    const searchTerms = expandSearchTerms(searchTerm)
+    const matches = questions.filter((q) => {
+      const questionLower = q.question.toLowerCase()
+      const keywordsLower = q.keywords?.map(k => k.toLowerCase()) || []
+      
+      return searchTerms.some(term => 
+        questionLower.includes(term) ||
+        keywordsLower.some(k => k.includes(term))
+      ) || fuzzyMatch(searchTerm.toLowerCase(), questionLower) > 0.5
+    })
 
     return matches.slice(0, 5)
   }, [searchTerm, questions])
 
-  const handleQuestionClick = async (questionId: string) => {
-    // Incrementar visualizações
-    await supabase.rpc('increment_faq_views', { question_id: questionId })
+  // Perguntas populares
+  const popularQuestions = useMemo(() => {
+    return questions.slice(0, 4)
+  }, [questions])
 
+  const handleQuestionClick = async (questionId: string) => {
+    await supabase.rpc('increment_faq_views', { question_id: questionId })
     setExpandedQuestion(expandedQuestion === questionId ? null : questionId)
   }
 
@@ -95,7 +198,7 @@ export default function FAQPage() {
     await supabase.rpc('increment_faq_helpful', { question_id: questionId })
 
     setHelpfulSubmitted([...helpfulSubmitted, questionId])
-    fetchData() // Atualizar contadores
+    fetchData()
   }
 
   const getCategoryIcon = (categoryId: string) => {
@@ -131,7 +234,7 @@ export default function FAQPage() {
         <div className="relative">
           <input
             type="text"
-            placeholder="Buscar pergunta... (ex: registro, habilitação, SARPAS)"
+            placeholder="Buscar pergunta... (ex: registro, habilitação, SARPAS, risco, indoor)"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full px-4 py-3 pl-12 border rounded-lg focus:ring-2 focus:ring-blue-500 text-lg"
@@ -151,9 +254,10 @@ export default function FAQPage() {
           </svg>
         </div>
 
-        {/* Sugestões */}
-        {suggestions.length > 0 && (
+        {/* Sugestões de busca */}
+        {suggestions.length > 0 && searchTerm.length >= 2 && (
           <div className="mt-2 space-y-1">
+            <p className="text-xs text-gray-500 mb-2">Sugestões:</p>
             {suggestions.map((s) => (
               <button
                 key={s.id}
@@ -161,14 +265,46 @@ export default function FAQPage() {
                   setSearchTerm('')
                   setExpandedQuestion(s.id)
                 }}
-                className="block w-full text-left px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded"
+                className="block w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 rounded border border-transparent hover:border-blue-200"
               >
-                {s.question}
+                <span className="font-medium">{s.question}</span>
+                <span className="text-gray-400 text-xs ml-2">({getCategoryName(s.category_id)})</span>
               </button>
             ))}
           </div>
         )}
+
+        {/* Dica de busca */}
+        {searchTerm.length > 0 && searchTerm.length < 2 && (
+          <p className="text-xs text-gray-500 mt-2">
+            Digite pelo menos 2 caracteres para buscar...
+          </p>
+        )}
       </div>
+
+      {/* Perguntas populares (quando não há busca) */}
+      {!searchTerm && (
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-3">📌 Perguntas Frequentes</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {popularQuestions.map((q) => (
+              <button
+                key={q.id}
+                onClick={() => setExpandedQuestion(q.id)}
+                className="text-left p-4 bg-white rounded-lg border hover:border-blue-300 hover:shadow-sm transition-all"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-xl">{getCategoryIcon(q.category_id)}</span>
+                  <div>
+                    <p className="font-medium text-gray-900 text-sm">{q.question}</p>
+                    <p className="text-xs text-gray-500 mt-1">{getCategoryName(q.category_id)}</p>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Categorias */}
       <div className="flex flex-wrap gap-2 mb-6">
@@ -201,12 +337,28 @@ export default function FAQPage() {
       <div className="space-y-4">
         {filteredQuestions.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-lg border">
-            <p className="text-gray-500">
+            <p className="text-gray-500 mb-2">
               Nenhuma pergunta encontrada para "{searchTerm}"
             </p>
-            <p className="text-sm text-gray-400 mt-2">
-              Tente buscar por palavras-chave como: registro, habilitação, autorização
+            <p className="text-sm text-gray-400 mb-4">
+              Tente palavras-chave como: registro, habilitação, autorização, risco, indoor
             </p>
+            {searchTerm.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm text-gray-600 mb-2">Perguntas relacionadas:</p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {questions.slice(0, 3).map((q) => (
+                    <button
+                      key={q.id}
+                      onClick={() => setExpandedQuestion(q.id)}
+                      className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200"
+                    >
+                      {q.question.substring(0, 30)}...
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           filteredQuestions.map((question) => (
@@ -272,7 +424,6 @@ export default function FAQPage() {
                       })}
                     </div>
 
-                    {/* Referência */}
                     {question.answer.includes('Referência:') && (
                       <p className="text-xs text-blue-600 mt-4">
                         📚{' '}
@@ -280,7 +431,6 @@ export default function FAQPage() {
                       </p>
                     )}
 
-                    {/* Feedback */}
                     <div className="mt-4 pt-4 border-t flex items-center gap-4">
                       <span className="text-sm text-gray-600">Esta resposta foi útil?</span>
                       <button
