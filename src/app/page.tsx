@@ -30,6 +30,7 @@ export default function Home() {
           Hub de Serviços e Gestão
         </h2>
         <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
+          Bem-vindo... (versão teste 1)
           A plataforma completa para operadores de drones brasileiros. 
           Gestão, marketplace e ferramentas especializadas em um só lugar.
         </p>
