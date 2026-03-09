@@ -1,7 +1,7 @@
-export const runtime = 'nodejs'
-
 import { NextResponse } from 'next/server'
 
-export function GET() {
+export const dynamic = 'force-dynamic'
+
+export async function GET() {
   return NextResponse.json({ ok: true })
 }
