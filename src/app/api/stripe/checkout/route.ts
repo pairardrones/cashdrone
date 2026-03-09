@@ -1,3 +1,5 @@
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
@@ -39,8 +41,8 @@ export async function POST(request: NextRequest) {
       const customer = await stripe.customers.create({
         email,
         metadata: {
-          supabaseUserId: userId,
-        },
+  supabaseUserId: userId,
+},
       })
       customerId = customer.id
 
@@ -68,8 +70,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       sessionId: session.id,
-      url: session.url,
-    })
+      url: session.url})
+
   } catch (error: any) {
     return NextResponse.json(
       { error: 'Internal server error', details: error?.message },
