@@ -1,324 +1,107 @@
-'use client'
+import Link from 'next/link'
 
-import { useState, useEffect, useMemo } from 'react'
-import { supabase } from '@/lib/supabase'
-
-interface Category {
-  id: string
-  name: string
-  icon: string
-  description: string
-  sort_order: number
-}
-
-interface Question {
-  id: string
-  category_id: string
-  question: string
-  answer: string
-  keywords: string[]
-  views: number
-  helpful_count: number
-}
-
-export default function FAQPage() {
-  const [categories, setCategories] = useState<Category[]>([])
-  const [questions, setQuestions] = useState<Question[]>([])
-  const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-  const [expandedQuestion, setExpandedQuestion] = useState<string | null>(null)
-  const [helpfulSubmitted, setHelpfulSubmitted] = useState<string[]>([])
-
-  useEffect(() => {
-    fetchData()
-  }, [])
-
-  const fetchData = async () => {
-    const [catRes, questRes] = await Promise.all([
-      supabase.from('faq_categories').select('*').order('sort_order'),
-      supabase.from('faq_questions').select('*').order('views', { ascending: false }),
-    ])
-
-    if (catRes.data) setCategories(catRes.data)
-    if (questRes.data) setQuestions(questRes.data)
-    setLoading(false)
-  }
-
-  // Filtrar perguntas por busca e categoria
-  const filteredQuestions = useMemo(() => {
-    let filtered = questions
-
-    // Filtro por categoria
-    if (selectedCategory) {
-      filtered = filtered.filter((q) => q.category_id === selectedCategory)
-    }
-
-    // Filtro por termo de busca
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase()
-      filtered = filtered.filter(
-        (q) =>
-          q.question.toLowerCase().includes(term) ||
-          q.answer.toLowerCase().includes(term) ||
-          q.keywords?.some((k) => k.toLowerCase().includes(term))
-      )
-    }
-
-    return filtered
-  }, [questions, selectedCategory, searchTerm])
-
-  // Sugestões de busca
-  const suggestions = useMemo(() => {
-    if (!searchTerm.trim() || searchTerm.length < 2) return []
-
-    const term = searchTerm.toLowerCase()
-    const matches = questions.filter(
-      (q) =>
-        q.question.toLowerCase().includes(term) ||
-        q.keywords?.some((k) => k.toLowerCase().includes(term))
-    )
-
-    return matches.slice(0, 5)
-  }, [searchTerm, questions])
-
-  const handleQuestionClick = async (questionId: string) => {
-    // Incrementar visualizações
-    await supabase.rpc('increment_faq_views', { question_id: questionId })
-
-    setExpandedQuestion(expandedQuestion === questionId ? null : questionId)
-  }
-
-  const handleHelpful = async (questionId: string) => {
-    if (helpfulSubmitted.includes(questionId)) return
-
-    await supabase.rpc('increment_faq_helpful', { question_id: questionId })
-
-    setHelpfulSubmitted([...helpfulSubmitted, questionId])
-    fetchData() // Atualizar contadores
-  }
-
-  const getCategoryIcon = (categoryId: string) => {
-    const cat = categories.find((c) => c.id === categoryId)
-    return cat?.icon || '📋'
-  }
-
-  const getCategoryName = (categoryId: string) => {
-    const cat = categories.find((c) => c.id === categoryId)
-    return cat?.name || 'Geral'
-  }
-
-  if (loading) {
-    return (
-      <div className="text-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-        <p className="mt-4 text-gray-600">Carregando...</p>
-      </div>
-    )
-  }
-
+export default function DashboardPage() {
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">FAQ - Legislação de Drones</h1>
-        <p className="text-gray-600 mt-2">
-          Tire suas dúvidas sobre regulamentação ANAC, DECEA e ANATEL
-        </p>
-      </div>
-
-      {/* Campo de busca */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border mb-6">
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Buscar pergunta... (ex: registro, habilitação, SARPAS)"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-3 pl-12 border rounded-lg focus:ring-2 focus:ring-blue-500 text-lg"
-          />
-          <svg
-            className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
-        </div>
-
-        {/* Sugestões */}
-        {suggestions.length > 0 && (
-          <div className="mt-2 space-y-1">
-            {suggestions.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => {
-                  setSearchTerm('')
-                  setExpandedQuestion(s.id)
-                }}
-                className="block w-full text-left px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded"
-              >
-                {s.question}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Categorias */}
-      <div className="flex flex-wrap gap-2 mb-6">
-        <button
-          onClick={() => setSelectedCategory(null)}
-          className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-            selectedCategory === null
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
-        >
-          Todas
-        </button>
-        {categories.map((cat) => (
-          <button
-            key={cat.id}
-            onClick={() => setSelectedCategory(cat.id)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-              selectedCategory === cat.id
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            {cat.icon} {cat.name}
-          </button>
-        ))}
-      </div>
-
-      {/* Lista de perguntas */}
-      <div className="space-y-4">
-        {filteredQuestions.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-lg border">
-            <p className="text-gray-500">
-              Nenhuma pergunta encontrada para "{searchTerm}"
-            </p>
-            <p className="text-sm text-gray-400 mt-2">
-              Tente buscar por palavras-chave como: registro, habilitação, autorização
-            </p>
-          </div>
-        ) : (
-          filteredQuestions.map((question) => (
-            <div
-              key={question.id}
-              className="bg-white rounded-lg shadow-sm border overflow-hidden"
-            >
-              <button
-                onClick={() => handleQuestionClick(question.id)}
-                className="w-full px-6 py-4 text-left flex items-start gap-4 hover:bg-gray-50 transition-colors"
-              >
-                <span className="text-2xl">{getCategoryIcon(question.category_id)}</span>
-                <div className="flex-1">
-                  <h3 className="font-medium text-gray-900">{question.question}</h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {getCategoryName(question.category_id)} • {question.views} visualizações
-                  </p>
-                </div>
-                <svg
-                  className={`w-5 h-5 text-gray-400 transition-transform ${
-                    expandedQuestion === question.id ? 'rotate-180' : ''
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </button>
-
-              {expandedQuestion === question.id && (
-                <div className="px-6 pb-6">
-                  <div className="ml-10 border-l-2 border-blue-200 pl-4">
-                    <div className="prose prose-sm max-w-none text-gray-700">
-                      {question.answer.split('\n').map((paragraph, i) => {
-                        if (paragraph.startsWith('**')) {
-                          return (
-                            <p key={i} className="font-semibold text-gray-900 mt-4 first:mt-0">
-                              {paragraph.replace(/\*\*/g, '')}
-                            </p>
-                          )
-                        }
-                        if (paragraph.startsWith('- ')) {
-                          return (
-                            <li key={i} className="ml-4">
-                              {paragraph.substring(2)}
-                            </li>
-                          )
-                        }
-                        if (paragraph.match(/^\d+\./)) {
-                          return (
-                            <li key={i} className="ml-4 list-decimal">
-                              {paragraph.replace(/^\d+\.\s*/, '')}
-                            </li>
-                          )
-                        }
-                        return <p key={i}>{paragraph}</p>
-                      })}
-                    </div>
-
-                    {/* Referência */}
-                    {question.answer.includes('Referência:') && (
-                      <p className="text-xs text-blue-600 mt-4">
-                        📚{' '}
-                        {question.answer.split('Referência:')[1]?.split('\n')[0]?.trim()}
-                      </p>
-                    )}
-
-                    {/* Feedback */}
-                    <div className="mt-4 pt-4 border-t flex items-center gap-4">
-                      <span className="text-sm text-gray-600">Esta resposta foi útil?</span>
-                      <button
-                        onClick={() => handleHelpful(question.id)}
-                        disabled={helpfulSubmitted.includes(question.id)}
-                        className={`px-3 py-1 text-sm rounded ${
-                          helpfulSubmitted.includes(question.id)
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-gray-100 text-gray-700 hover:bg-green-50'
-                        }`}
-                      >
-                        {helpfulSubmitted.includes(question.id) ? '✓ Obrigado!' : '👍 Sim'}
-                      </button>
-                      <span className="text-sm text-gray-500">
-                        {question.helpful_count} pessoas acharam útil
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Info Box */}
-      <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <div className="flex gap-3">
-          <span className="text-2xl">📖</span>
+    <main className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 py-10">
+        <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h3 className="font-medium text-blue-900">Base de Conhecimento</h3>
-            <p className="text-sm text-blue-700 mt-1">
-              Este FAQ é baseado nas regulamentações oficiais: RBAC nº 100 (ANAC), ICA 100-40 (DECEA) 
-              e Resolução ANATEL nº 680/2017. Para casos específicos, consulte sempre um especialista.
+            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+            <p className="text-gray-600">
+              Acesse os módulos do Ca$hDrone.
             </p>
           </div>
-        </div>
+
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/"
+              className="px-4 py-2 rounded-lg border bg-white hover:bg-gray-50 text-gray-700"
+            >
+              Início
+            </Link>
+            <Link
+              href="/dashboard/faq"
+              className="px-4 py-2 rounded-lg border bg-white hover:bg-gray-50 text-gray-700"
+            >
+              FAQ (Dashboard)
+            </Link>
+            <Link
+              href="/faq"
+              className="px-4 py-2 rounded-lg border bg-white hover:bg-gray-50 text-gray-700"
+            >
+              FAQ (Público)
+            </Link>
+          </div>
+        </header>
+
+        <section className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <Link
+            href="/dashboard/simulador"
+            className="bg-white border rounded-lg p-5 hover:shadow-sm transition"
+          >
+            <div className="text-2xl mb-2">📊</div>
+            <h2 className="font-semibold text-gray-900">Simulador de Preços</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Calcule preço ideal por serviço.
+            </p>
+          </Link>
+
+          <Link
+            href="/dashboard/meteorologia"
+            className="bg-white border rounded-lg p-5 hover:shadow-sm transition"
+          >
+            <div className="text-2xl mb-2">🌤️</div>
+            <h2 className="font-semibold text-gray-900">Briefing Meteorológico</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Consulte condições para voo.
+            </p>
+          </Link>
+
+          <Link
+            href="/dashboard/aro-sora"
+            className="bg-white border rounded-lg p-5 hover:shadow-sm transition"
+          >
+            <div className="text-2xl mb-2">⚠️</div>
+            <h2 className="font-semibold text-gray-900">ARO/SORA</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Avaliação de risco operacional.
+            </p>
+          </Link>
+
+          <Link
+            href="/dashboard/clientes"
+            className="bg-white border rounded-lg p-5 hover:shadow-sm transition"
+          >
+            <div className="text-2xl mb-2">👥</div>
+            <h2 className="font-semibold text-gray-900">CRM de Clientes</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Propostas, histórico e relacionamento.
+            </p>
+          </Link>
+
+          <Link
+            href="/dashboard/marketplace"
+            className="bg-white border rounded-lg p-5 hover:shadow-sm transition"
+          >
+            <div className="text-2xl mb-2">🛒</div>
+            <h2 className="font-semibold text-gray-900">Marketplace</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Oportunidades e oferta de serviços.
+            </p>
+          </Link>
+
+          <Link
+            href="/dashboard/faq"
+            className="bg-white border rounded-lg p-5 hover:shadow-sm transition"
+          >
+            <div className="text-2xl mb-2">📚</div>
+            <h2 className="font-semibold text-gray-900">FAQ Legislação</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              ANAC, DECEA, ANATEL e boas práticas.
+            </p>
+          </Link>
+        </section>
       </div>
-    </div>
+    </main>
   )
 }
