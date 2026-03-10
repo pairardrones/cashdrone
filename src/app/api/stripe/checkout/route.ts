@@ -1,5 +1,3 @@
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
@@ -40,8 +38,7 @@ export async function POST(request: NextRequest) {
     if (!customerId) {
       const customer = await stripe.customers.create({
         email,
-        metadata: {
-  supabaseUserId: userId,
+        metadata: {supabaseUserId: userId,
 },
       })
       customerId = customer.id
@@ -63,9 +60,7 @@ export async function POST(request: NextRequest) {
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${appUrl}/dashboard/assinatura?success=true`,
       cancel_url: `${appUrl}/dashboard/assinatura?canceled=true`,
-      metadata: {
-        supabaseUserId: userId,
-      },
+      metadata: { supabaseUserId: userId}
     })
 
     return NextResponse.json({

@@ -16,6 +16,14 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!
 
+// Helper para acessar campos de período de forma segura
+function getPeriodTimestamps(sub: any) {
+  return {
+    current_period_start: sub.current_period_start ?? 0,
+    current_period_end: sub.current_period_end ?? 0,
+  }
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.text()
   const signature = request.headers.get('stripe-signature')
@@ -37,9 +45,9 @@ export async function POST(request: NextRequest) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
 
-        const userId = session.metadata?.supabaseUserId
+        const userId = session.metadata?.supabaseUserId || session.metadata?.userId
         if (!userId) {
-          return NextResponse.json({ error: 'Missing supabaseUserId in metadata' }, { status: 400 })
+          return NextResponse.json({ error: 'Missing userId in metadata' }, { status: 400 })
         }
 
         const subscriptionId = session.subscription as string | null
@@ -47,23 +55,25 @@ export async function POST(request: NextRequest) {
 
         if (!subscriptionId || !customerId) {
           return NextResponse.json(
-            { error: 'Missing subscriptionId or customerId in session' },
+            { error: 'Missing subscriptionId or customerId' },
             { status: 400 }
           )
         }
 
-        const subscription = await stripe.subscriptions.retrieve(subscriptionId)
-        const priceId = subscription.items.data[0]?.price?.id || null
+        const stripeSub = await stripe.subscriptions.retrieve(subscriptionId)
+        const subAny = stripeSub as any
+        const { current_period_start, current_period_end } = getPeriodTimestamps(subAny)
+        const priceId = subAny.items?.data?.[0]?.price?.id || null
 
         await supabase.from('subscriptions').upsert({
           user_id: userId,
           stripe_customer_id: customerId,
           stripe_subscription_id: subscriptionId,
           stripe_price_id: priceId,
-          status: subscription.status === 'active' ? 'active' : subscription.status,
-          current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-          cancel_at_period_end: subscription.cancel_at_period_end,
+          status: subAny.status,
+          current_period_start: new Date(current_period_start * 1000).toISOString(),
+          current_period_end: new Date(current_period_end * 1000).toISOString(),
+          cancel_at_period_end: subAny.cancel_at_period_end,
         })
 
         break
@@ -80,13 +90,16 @@ export async function POST(request: NextRequest) {
           .maybeSingle()
 
         if (sub?.user_id) {
+          const subAny = subscription as any
+          const { current_period_start, current_period_end } = getPeriodTimestamps(subAny)
+
           await supabase
             .from('subscriptions')
             .update({
-              status: subscription.status,
-              current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-              current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-              cancel_at_period_end: subscription.cancel_at_period_end,
+              status: subAny.status,
+              current_period_start: new Date(current_period_start * 1000).toISOString(),
+              current_period_end: new Date(current_period_end * 1000).toISOString(),
+              cancel_at_period_end: subAny.cancel_at_period_end,
             })
             .eq('user_id', sub.user_id)
         }
@@ -129,19 +142,24 @@ export async function POST(request: NextRequest) {
           .maybeSingle()
 
         if (sub?.user_id) {
-          await supabase.from('subscriptions').update({ status: 'past_due' }).eq('user_id', sub.user_id)
+          await supabase
+            .from('subscriptions')
+            .update({ status: 'past_due' })
+            .eq('user_id', sub.user_id)
         }
 
         break
       }
 
       default:
-        // Ignora eventos que você não está tratando
         break
     }
 
     return NextResponse.json({ received: true })
   } catch (error: any) {
-    return NextResponse.json({ error: 'Webhook handler failed', details: error?.message }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Webhook handler failed', details: error?.message },
+      { status: 500 }
+    )
   }
 }
